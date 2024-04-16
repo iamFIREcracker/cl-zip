@@ -15,6 +15,7 @@ ml:
 	cp ~/Workspace/3am/3am.asd          vendor/3am/
 	cp ~/Workspace/3am/3am.lisp         vendor/3am/
 
+
 .PHONY: tests
 tests:
 	sbcl --noinform \
@@ -23,3 +24,10 @@ tests:
 		--eval "(asdf:test-system :net.matteolandi.zip)" \
 		--eval "(uiop:quit 0)"
 
+.PHONY: tests-ros
+tests-ros:
+	ros run \
+		--eval "(pushnew '*default-pathname-defaults* asdf:*central-registry*)" \
+		--eval "(ql:quickload :net.matteolandi.zip/tests)" \
+		--eval "(asdf:test-system :net.matteolandi.zip)" \
+		--eval "(uiop:quit 0)"

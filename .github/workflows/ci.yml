@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * SUN"
+
+jobs:
+  ci-config:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.set-enabled.outputs.enabled }}
+      roswell-version: ${{ steps.set-deps-versions.outputs.roswell-version }}
+      asdf-version: ${{ steps.set-deps-versions.outputs.asdf-version }}
+      qlot-version: ${{ steps.set-deps-versions.outputs.qlot-version }}
+    steps:
+      - id: set-enabled
+        name: Set enabled
+        run: |
+          event_name=${{ github.event_name }}
+          pull_request_repo=${{ github.event.pull_request.head.repo.full_name }}
+          repo=${{ github.repository }}
+
+          enabled=no
+          # We want to run on external PRs, but not on our own internal PRs as
+          # they'll be run by the push to the branch.
+          if test "$event_name" != 'pull_request' -o "$pull_request_repo" != "$repo"
+          then
+            enabled=yes
+          fi
+          echo "::set-output name=enabled::$enabled"
+      - id: set-deps-versions
+        name: Set dependencies versions
+        run: |
+          event_name=${{ github.event_name }}
+
+          roswell_version=latest
+          asdf_version=latest
+          qlot_version=latest
+          if [[ $event_name == 'schedule' ]]; then
+            roswell_version=latest
+            asdf_version=latest
+            qlot_version=latest
+          fi
+          echo "::set-output name=roswell-version::$roswell_version"
+          echo "::set-output name=asdf-version::$asdf_version"
+          echo "::set-output name=qlot-version::$qlot_version"
+
+  tests:
+    needs: ci-config
+    if: needs.ci-config.outputs.enabled == 'yes'
+    strategy:
+      fail-fast: false # Let the workflow continue as much as possible
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        lisp: [ sbcl-bin/2.4.1 ]
+    defaults:
+      run:
+        shell: lispsh {0}
+    name: tests [lisp=${{ matrix.lisp }}, os=${{ matrix.os }}]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: 40ants/setup-lisp@v2
+        with:
+          roswell-version: ${{ needs.ci-config.outputs.roswell-version }}
+          asdf-version: ${{ needs.ci-config.outputs.asdf-version }}
+          qlot-version: ${{ needs.ci-config.outputs.qlot-version }}
+      - uses: actions/checkout@v2
+      - run: make tests-ros
