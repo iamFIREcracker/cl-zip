@@ -246,9 +246,9 @@ BND* will expand to a DESTRUCTURING-BIND call:
       (expand bindings)))
   
 
-  (defmacro bnd1 (binding &body body)
-    "Equivalent to BND* with one binding."
-    `(bnd* (,binding)
+  (defmacro bnd1 (var val &body body)
+    "BND1 is to BND* like LET1 is to LET*."
+    `(bnd* ((,var ,val))
        ,@body))
   
 

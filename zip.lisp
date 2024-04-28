@@ -114,7 +114,7 @@ or by copying the slot value from `existing`."
 
 
 (defun changed (nav)
-  (bnd1 (nav (copy-nav nav))
+  (bnd1 nav (copy-nav nav)
     (setf (nav-changed? nav) t)
     nav))
 
@@ -247,7 +247,7 @@ moving"
           (or (right it) (recur it)))))))
 
 (examples next
-  (bnd1 (z (zip '(* (+ 1 2) (- 3 4))))
+  (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
     (is (equal (~> z next node)
                '*))
     (is (equal (~> z next next node)
@@ -282,7 +282,7 @@ When at the root, return nil."
     (up loc)))
 
 (examples prev
-  (bnd1 (z (~> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next)))
+  (bnd1 z (~> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next))
     (is (equal (node z) 4))
     (is (equal (~> z prev node)
                3))
@@ -314,7 +314,7 @@ If no such loc exists, returns nil."
     nil))
 
 (examples next-that
-  (bnd1 (z (zip '(* (+ 1 2) (- 3 4))))
+  (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
     (setf z (~> z (next-that [numberp (node _)])))
     (is (equal (node z) 1))
     (setf z (~> z (next-that [numberp (node _)])))
@@ -333,7 +333,7 @@ If no such loc exists, returns nil."
     nil))
 
 (examples prev-that
-  (bnd1 (z (~> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next)))
+  (bnd1 z (~> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next))
     (is (equal (node z) 4))
     (setf z (~> z (prev-that [numberp (node _)])))
     (is (equal (node z) 3))
@@ -433,7 +433,7 @@ depth first."
                     (meta loc)))))))
 
 (examples erase
-  (bnd1 (z (zip '(* (+ 1 2) (- 3 4))))
+  (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
     (is (equal (~> z (next-that [equal (node _) 1]) erase node)
                '+))
     (is (equal (~> z (next-that [equal (node _) 1]) erase unzip)
