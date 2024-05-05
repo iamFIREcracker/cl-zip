@@ -205,9 +205,9 @@ or by copying the slot value from `existing`."
                     (meta loc)))))))
 
 (examples left
-  (is (equal (~> (zip '(1 2 3)) down rightmost left node)
+  (is (equal (~> (zip '(1 2 3)) down right right left node)
              2))
-  (is (equal (~> (zip '(1 2 3)) down rightmost left left node)
+  (is (equal (~> (zip '(1 2 3)) down right right left left node)
              1)))
 
 (defun leftmost (loc)
