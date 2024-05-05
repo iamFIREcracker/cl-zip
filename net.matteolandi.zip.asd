@@ -32,4 +32,14 @@
 
 (asdf:defsystem #:net.matteolandi.zip/tests
   :depends-on (#:net.matteolandi.zip)
+  :components (
+
+               (:module "tests"
+                :components (
+                             (:file "aoc")
+                             (:static-file "aoc.txt")
+                ))
+
+               )
+
   :perform (test-op (o c) (uiop:symbol-call :3am '#:run)))

@@ -2,6 +2,8 @@
   (:use #:cl #:mlutils #:3am)
   (:shadow :replace :remove)
   (:export
+   :node
+   :nav :ups
    :make-zipper :zip :unzip
    :down :up :right :rightmost :left :leftmost
    :next :next-that :prev :prev-that
