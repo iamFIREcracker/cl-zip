@@ -1,12 +1,52 @@
 (defpackage #:zip
-  (:use #:cl #:mlutils #:3am))
+  (:use #:cl #:mlutils #:3am)
+  (:export
+   :make-zipper :zip :unzip
+   :down :up :right :rightmost :left :leftmost
+   :next :next-that :prev :prev-that
+   :insert-left :insert-right :supersede :edit :insert-child :append-child :erase))
 (in-package #:zip)
 (named-readtables:in-readtable :mlutils-syntax)
 
+
+(defstruct (loc (:constructor %make-loc))
+  "A zipper's core data structure: a location object.
+
+`node` represent the currently focused element.
+
+`nav` is a navigation object, allowing a zipper to efficiently move left,
+right, and back up.
+
+`meta` is is a META object containing pointers to fns used to implement
+the zipper algorithm.  "
+  node
+  nav
+  meta)
+
 (defstruct nav
-  lefts
+  "A zipper's navigation object, enabling efficient movements left, right, and
+up.
+
+`ups` is the list of nodes visible above: the first element of the list
+represents the node immediately above, while the last element represents
+the root.
+
+`lefts` is the list of nodes visible the left: the first element of the list
+represents the node immediately to the left, while the last element represents
+the leftmost element to the left.
+
+`rights` is the list of nodes visible the right: the first element of the list
+represents the node immediately to the right, while the last element represents
+the rightmost element to the right.
+
+`pnav` is a pointer to the NAV object of the parent, while `changed?` is a
+flag indicating whether any mutation has been applied or not.  There are
+mostly used to avoid cons-ing unless strictly required.
+"
   ups
+  lefts
   rights
+
   pnav
   changed?)
 
@@ -15,49 +55,33 @@
   children
   make-node)
 
-(defstruct (loc (:constructor %make-loc))
-  node
-  nav
-  meta)
-
-
-(defun make-loc (node nav meta) (%make-loc :node node :nav nav :meta meta))
 
 (defun make-zipper (branch? children make-node root)
   "Creates a new zipper instance.
 
-`branch?` is a fn that, given a node, returns T if can have children,
+`branch?` is a fn that, given a LOC, returns T if it can have children,
 even if it currently doesn't.
 
-`children` is a fn that, given a node, returns a LIST of its children.
+`children` is a fn that, given a LOC, returns a LIST of its children.
 
-`make-node` is a fn that, given an existing nde and a LIST of children,
-returns a new branch node with the supplied children.
+`make-node` is a fn that, given an existing LOC and a LIST of children,
+returns a new branch LOC with the supplied children.
 
 `root` is the root node."
   (make-loc root nil (make-meta :branch? branch?
                                 :children children
                                 :make-node make-node)))
 
-(defun update-nav (existing &key
-                            (lefts nil lefts?)
-                            (ups nil ups?)
-                            (rights nil rights?)
-                            (pnav nil pnav?)
-                            (changed? nil changed??))
-  "Returns a new NAV instance with slots initialized either via keyword arguments,
-or by copying the slot value from `existing`."
-  (make-nav :lefts (if lefts? lefts (nav-lefts existing))
-            :ups (if ups? ups (nav-ups existing))
-            :rights (if rights? rights (nav-rights existing))
-            :pnav (if pnav? pnav (nav-pnav existing))
-            :changed? (if changed?? changed? (nav-changed? existing))))
+(defun make-loc (node nav meta) (%make-loc :node node :nav nav :meta meta))
 
-(defmethod zip ((root list))
-  (make-zipper #'listp
-               #'identity
-               (fn (node children) (declare (ignore node)) children)
-               root))
+
+(defgeneric zip (root)
+  (:documentation "Creates a zipper and returns a LOC focused on `root`")
+  (:method ((root list))
+    (make-zipper #'listp
+                 #'identity
+                 (fn (node children) (declare (ignore node)) children)
+                 root)))
 
 
 ;;; Selectors
@@ -138,6 +162,7 @@ or by copying the slot value from `existing`."
   (is (equal (~> (zip '(((1)))) down down up up down down down node)
              1)))
 
+
 (defun all-the-way (fn loc)
   (aif (funcall fn loc)
     (all-the-way fn it)
@@ -151,40 +176,20 @@ or by copying the slot value from `existing`."
   (is (equal (~> (zip '(((1)))) down down down (all-the-way #'up) node)
              '(((1))))))
 
-(defun right (loc)
-  "Returns the loc of the right sibling of the mode at this loc, or nil"
-  (w/slots (node nav) loc
-    (when nav
-      (w/slots (lefts rights) nav
-        (when rights
-          (make-loc (car rights)
-                    (update-nav nav
-                                :lefts (cons node lefts)
-                                :rights (rest rights))
-                    (meta loc)))))))
 
-(examples right
-  (is (equal (~> (zip '(1 2 3)) down right node)
-             2))
-  (is (equal (~> (zip '(1 2 3)) down right right node)
-             3)))
-
-(defun rightmost (loc)
-  "Returns the loc of the rightmost siblings of the node at this loc, or self"
-  (w/slots (node nav) loc
-    (when nav
-      (w/slots (lefts rights) nav
-        (when rights
-          (make-loc (last-elt rights)
-                    (update-nav nav
-                                :lefts (append (reverse (butlast rights))
-                                               (cons node lefts))
-                                :rights nil)
-                    (meta loc)))))))
-
-(examples rightmost
-  (is (equal (~> (zip '(1 2 3)) down rightmost node)
-             3)))
+(defun update-nav (existing &key
+                            (lefts nil lefts?)
+                            (ups nil ups?)
+                            (rights nil rights?)
+                            (pnav nil pnav?)
+                            (changed? nil changed??))
+  "Returns a new NAV instance with slots initialized either via keyword arguments,
+or by copying the slot value from `existing`."
+  (make-nav :lefts (if lefts? lefts (nav-lefts existing))
+            :ups (if ups? ups (nav-ups existing))
+            :rights (if rights? rights (nav-rights existing))
+            :pnav (if pnav? pnav (nav-pnav existing))
+            :changed? (if changed?? changed? (nav-changed? existing))))
 
 (defun left (loc)
   "Returns the loc of the left sibling of the mode at this loc, or nil"
@@ -221,18 +226,42 @@ or by copying the slot value from `existing`."
   (is (equal (~> (zip '(1 2 3)) down rightmost leftmost node)
              1)))
 
-(defun insert-left (loc item)
-  "Inserts the item as the left sibling of the node at this loc, without
-moving"
+
+(defun right (loc)
+  "Returns the loc of the right sibling of the mode at this loc, or nil"
   (w/slots (node nav) loc
-    (if-not nav
-      (error "Insert at top")
-      (w/slots (lefts) nav
-        (make-loc node
-                  (update-nav nav
-                              :lefts (cons item lefts)
-                              :changed? t)
-                  (meta loc))))))
+    (when nav
+      (w/slots (lefts rights) nav
+        (when rights
+          (make-loc (car rights)
+                    (update-nav nav
+                                :lefts (cons node lefts)
+                                :rights (rest rights))
+                    (meta loc)))))))
+
+(examples right
+  (is (equal (~> (zip '(1 2 3)) down right node)
+             2))
+  (is (equal (~> (zip '(1 2 3)) down right right node)
+             3)))
+
+(defun rightmost (loc)
+  "Returns the loc of the rightmost siblings of the node at this loc, or self"
+  (w/slots (node nav) loc
+    (when nav
+      (w/slots (lefts rights) nav
+        (when rights
+          (make-loc (last-elt rights)
+                    (update-nav nav
+                                :lefts (append (reverse (butlast rights))
+                                               (cons node lefts))
+                                :rights nil)
+                    (meta loc)))))))
+
+(examples rightmost
+  (is (equal (~> (zip '(1 2 3)) down rightmost node)
+             3)))
+
 
 ;;; Advanced navigation
 (defun next (loc)
@@ -270,6 +299,26 @@ moving"
                nil))
     ))
 
+(defun next-that (fn loc)
+  "Moves to the next loc in the hierarchy such that (fn loc) is T.
+If no such loc exists, returns nil."
+  (if-let (nloc (next loc))
+    (if (funcall fn nloc) nloc (next-that fn nloc))
+    nil))
+
+(examples next-that
+  (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
+    (setf z (~> z (next-that [numberp (node _)])))
+    (is (equal (node z) 1))
+    (setf z (~> z (next-that [numberp (node _)])))
+    (is (equal (node z) 2))
+    (setf z (~> z (next-that [numberp (node _)])))
+    (is (equal (node z) 3))
+    (setf z (~> z (next-that [numberp (node _)])))
+    (is (equal (node z) 4))
+    ))
+
+
 (defun prev (loc)
   "Moves to the previous loc in the hierarchy, depth-first.
 When at the root, return nil."
@@ -306,25 +355,6 @@ When at the root, return nil."
                 nil))
     ))
 
-(defun next-that (fn loc)
-  "Moves to the next loc in the hierarchy such that (fn loc) is T.
-If no such loc exists, returns nil."
-  (if-let (nloc (next loc))
-    (if (funcall fn nloc) nloc (next-that fn nloc))
-    nil))
-
-(examples next-that
-  (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
-    (setf z (~> z (next-that [numberp (node _)])))
-    (is (equal (node z) 1))
-    (setf z (~> z (next-that [numberp (node _)])))
-    (is (equal (node z) 2))
-    (setf z (~> z (next-that [numberp (node _)])))
-    (is (equal (node z) 3))
-    (setf z (~> z (next-that [numberp (node _)])))
-    (is (equal (node z) 4))
-    ))
-
 (defun prev-that (fn loc)
   "Moves to the prev loc in the hirerachy such that (fn loc) is T.
 If no such loc exists, returns nil."
@@ -343,7 +373,21 @@ If no such loc exists, returns nil."
     (is (equal (node z) 1))
     ))
 
+
 ;;; Mutation
+(defun insert-left (loc item)
+  "Inserts the item as the left sibling of the node at this loc, without
+moving"
+  (w/slots (node nav) loc
+    (if-not nav
+      (error "Insert at top")
+      (w/slots (lefts) nav
+        (make-loc node
+                  (update-nav nav
+                              :lefts (cons item lefts)
+                              :changed? t)
+                  (meta loc))))))
+
 (examples insert-left
   (is (equal (~> (zip '(1 2 3)) down (insert-left ~ 0) node)
              1))
