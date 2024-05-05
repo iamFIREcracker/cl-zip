@@ -1,10 +1,11 @@
 (defpackage #:zip
   (:use #:cl #:mlutils #:3am)
+  (:shadow :replace :remove)
   (:export
    :make-zipper :zip :unzip
    :down :up :right :rightmost :left :leftmost
    :next :next-that :prev :prev-that
-   :insert-left :insert-right :supersede :edit :insert-child :append-child :erase))
+   :insert-left :insert-right :replace :edit :insert-child :append-child :remove))
 (in-package #:zip)
 (named-readtables:in-readtable :mlutils-syntax)
 
@@ -413,19 +414,19 @@ moving"
   (is (equal (~> (zip '(1 2 3)) down rightmost (insert-right ~ 4) unzip)
              '(1 2 3 4))))
 
-(defun supersede (loc item)
+(defun replace (loc item)
   "Replaces the node at this loc, without moving"
   (make-loc item (update-nav (nav loc) :changed? t) (meta loc)))
 
-(examples supersede
-  (is (equal (~> (zip '(1 2 3)) down rightmost (supersede ~ 333) node)
+(examples replace
+  (is (equal (~> (zip '(1 2 3)) down rightmost (replace ~ 333) node)
              333))
-  (is (equal (~> (zip '(1 2 3)) down rightmost (supersede ~ 333) unzip)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (replace ~ 333) unzip)
              '(1 2 333))))
 
 (defun edit (loc fn &rest args)
   "Replaces the node at this loc with the result of (fn node args)"
-  (supersede loc (apply fn (node loc) args)))
+  (replace loc (apply fn (node loc) args)))
 
 (examples edit
   (is (equal (~> (zip '(1 2 3)) down rightmost (edit ~ [* _ 2]) node)
@@ -436,7 +437,7 @@ moving"
 (defun insert-child (loc item)
   "Inserts `item` as the leftmost child of the node at this loc, without
 moving"
-  (supersede loc (make-node loc (node loc) (cons item (children loc)))))
+  (replace loc (make-node loc (node loc) (cons item (children loc)))))
 
 (examples insert-child
   (is (equal (~> (zip '(1 2 3)) down (edit ~ [list _]) (insert-child ~ 0) node)
@@ -447,7 +448,7 @@ moving"
 (defun append-child (loc item)
   "Inserts `item` as the rightmost child of the node at this loc, without
 moving"
-  (supersede loc (make-node loc (node loc) (append (children loc)
+  (replace loc (make-node loc (node loc) (append (children loc)
                                                    (list item)))))
 
 (examples append-child
@@ -456,7 +457,7 @@ moving"
   (is (equal (~> (zip '(1 2 3)) down rightmost (edit ~ [list _]) (append-child ~ 4) unzip)
              '(1 2 (3 4)))))
 
-(defun erase (loc)
+(defun remove (loc)
   "Removes the node at loc and moves to the previous loc in the hierarchy,
 depth first."
   (w/slots (nav) loc
@@ -476,15 +477,15 @@ depth first."
                     (and prev (update-nav prev :changed? t))
                     (meta loc)))))))
 
-(examples erase
+(examples remove
   (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
-    (is (equal (~> z (next-that [equal (node _) 1]) erase node)
+    (is (equal (~> z (next-that [equal (node _) 1]) remove node)
                '+))
-    (is (equal (~> z (next-that [equal (node _) 1]) erase unzip)
+    (is (equal (~> z (next-that [equal (node _) 1]) remove unzip)
                '(* (+ 2) (- 3 4))))
 
-    (is (equal (~> z (next-that [equal (node _) '+]) up erase node)
+    (is (equal (~> z (next-that [equal (node _) '+]) up remove node)
                '*))
-    (is (equal (~> z (next-that [equal (node _) '+]) up erase unzip)
+    (is (equal (~> z (next-that [equal (node _) '+]) up remove unzip)
                '(* (- 3 4))))
     ))
