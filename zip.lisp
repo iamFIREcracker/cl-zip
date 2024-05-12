@@ -2,8 +2,8 @@
   (:use #:cl #:mlutils #:3am)
   (:shadow :replace :remove)
   (:export
-   :node
-   :nav :ups
+   :loc :node
+   :nav :ups :lefts :rights :pnav :changed?
    :make-zipper :zip :unzip
    :down :up :right :rightmost :left :leftmost
    :next :next-that :prev :prev-that
@@ -15,13 +15,14 @@
 (defstruct (loc (:constructor %make-loc))
   "A zipper's core data structure: a location object.
 
-`node` represent the currently focused element.
+It's composed of the following slots:
 
-`nav` is a navigation object, allowing a zipper to efficiently move left,
-right, and back up.
-
-`meta` is is a META object containing pointers to fns used to implement
-the zipper algorithm.  "
+- `node` represent the currently focused element.
+- `nav` is a NAV object, allowing a zipper to efficiently move left, right, and
+  back up.
+- `meta` is is a META object containing pointers to fns used to implement the
+  zipper algorithm.
+"
   node
   nav
   meta)
@@ -30,21 +31,20 @@ the zipper algorithm.  "
   "A zipper's navigation object, enabling efficient movements left, right, and
 up.
 
-`ups` is the list of nodes visible above: the first element of the list
-represents the node immediately above, while the last element represents
-the root.
+It's composed of the following slots:
 
-`lefts` is the list of nodes visible the left: the first element of the list
-represents the node immediately to the left, while the last element represents
-the leftmost element to the left.
-
-`rights` is the list of nodes visible the right: the first element of the list
-represents the node immediately to the right, while the last element represents
-the rightmost element to the right.
-
-`pnav` is a pointer to the NAV object of the parent, while `changed?` is a
-flag indicating whether any mutation has been applied or not.  There are
-mostly used to avoid cons-ing unless strictly required.
+- `ups` is the list of nodes visible above: the first element of the list
+  represents the node immediately above, while the last element represents the
+  root.
+- `lefts` is the list of nodes visible the left: the first element of the list
+  represents the node immediately to the left, while the last element
+  represents the leftmost element to the left.
+- `rights` is the list of nodes visible the right: the first element of the
+  list represents the node immediately to the right, while the last element
+  represents the rightmost element to the right.
+- `pnav` is a pointer to the NAV object of the parent, while `changed?` is
+  a flag indicating whether any mutation has been applied or not.  There are
+  mostly used to avoid cons-ing unless strictly required.
 "
   ups
   lefts
@@ -53,7 +53,19 @@ mostly used to avoid cons-ing unless strictly required.
   pnav
   changed?)
 
+;; TODO can we (nicely and concisely) get rid of the following, and use methods
+;; instead?
 (defstruct meta
+  "A zipper's metadata object.
+
+It's composed of the following slots:
+
+- `branch?` is a fn that, given a LOC, returns T if it can have children, even
+  if it currently doesn't.
+- `children` is a fn that, given a LOC, returns a LIST of its children.
+- `make-node` is a fn that, given an existing LOC and a LIST of children,
+  returns a new branch LOC with the supplied children.
+"
   branch?
   children
   make-node)
@@ -104,22 +116,22 @@ returns a new branch LOC with the supplied children.
 
 
 (defun ups (loc)
-  "Returns a list of nodes leading to this location"
+  "Returns a list of nodes leading to this loc"
   (nav-ups (nav loc)))
 
 (defun lefts (loc)
-  "Returns a list of the left siblings of this location"
+  "Returns a list of the left siblings of this loc"
   (nav-lefts (pr (nav loc))))
 
 (defun rights (loc)
-  "Returns a list of the right siblings of this location"
+  "Returns a list of the right siblings of this loc"
   (nav-rights (nav loc)))
 
 
 ;;; Basic navigation
 (defun down (loc)
-  "Returns the location of the leftmost child of the node at this location, or
-  nil if no children"
+  "Returns the LOC of the leftmost child of the node at this location, or nil
+  if no children"
   (when (branch? loc)
     (awhen (children loc)
       (d-b (c . cnext) it
@@ -146,7 +158,7 @@ returns a new branch LOC with the supplied children.
     nav))
 
 (defun up (loc)
-  "Returns the loc of the parent of the node at this loc, or nil if at the top"
+  "Returns the LOC of the parent of the node at this loc, or nil if at the top"
   (w/slots (node nav) loc
     (when nav
       (w/slots (lefts ups rights pnav changed?) nav
@@ -195,7 +207,7 @@ or by copying the slot value from `existing`."
             :changed? (if changed?? changed? (nav-changed? existing))))
 
 (defun left (loc)
-  "Returns the loc of the left sibling of the mode at this loc, or nil"
+  "Returns the LOC of the left sibling of the node at this loc, or nil"
   (w/slots (node nav) loc
     (when nav
       (w/slots (lefts rights) nav
@@ -213,7 +225,7 @@ or by copying the slot value from `existing`."
              1)))
 
 (defun leftmost (loc)
-  "Returns the loc of the leftmost siblings of the node at this loc, or self"
+  "Returns the LOC of the leftmost siblings of the node at this loc, or self"
   (w/slots (node nav) loc
     (when nav
       (w/slots (lefts rights) nav
@@ -231,7 +243,7 @@ or by copying the slot value from `existing`."
 
 
 (defun right (loc)
-  "Returns the loc of the right sibling of the mode at this loc, or nil"
+  "Returns the LOC of the right sibling of the node at this loc, or nil"
   (w/slots (node nav) loc
     (when nav
       (w/slots (lefts rights) nav
@@ -249,7 +261,7 @@ or by copying the slot value from `existing`."
              3)))
 
 (defun rightmost (loc)
-  "Returns the loc of the rightmost siblings of the node at this loc, or self"
+  "Returns the LOC of the rightmost siblings of the node at this loc, or self"
   (w/slots (node nav) loc
     (when nav
       (w/slots (lefts rights) nav
@@ -268,7 +280,7 @@ or by copying the slot value from `existing`."
 
 ;;; Advanced navigation
 (defun next (loc)
-  "Moves to the next loc in the hierarchy, depth-first.  When reaching the end,
+  "Moves to the next LOC in the hierarchy, depth-first.  When reaching the end,
   returns nil."
   (when loc
     (or
@@ -303,8 +315,8 @@ or by copying the slot value from `existing`."
     ))
 
 (defun next-that (fn loc)
-  "Moves to the next loc in the hierarchy such that (fn loc) is T.
-If no such loc exists, returns nil."
+  "Moves to the next LOC in the hierarchy such that (apply fn loc) is T.
+If no such LOC exists, returns nil."
   (if-let (nloc (next loc))
     (if (funcall fn nloc) nloc (next-that fn nloc))
     nil))
@@ -323,8 +335,8 @@ If no such loc exists, returns nil."
 
 
 (defun prev (loc)
-  "Moves to the previous loc in the hierarchy, depth-first.
-When at the root, return nil."
+  "Moves to the previous LOC in the hierarchy, depth-first.  When at the root,
+  return nil."
   (declare (optimize (debug 3)))
   (aif (left loc)
     (recursively ((loc it))
@@ -359,8 +371,8 @@ When at the root, return nil."
     ))
 
 (defun prev-that (fn loc)
-  "Moves to the prev loc in the hirerachy such that (fn loc) is T.
-If no such loc exists, returns nil."
+  "Moves to the prev LOC in the hirerachy such that (apply fn loc) is T.
+If no such LOC exists, returns nil."
   (if-let (ploc (prev loc))
     (if (funcall fn ploc) ploc (prev-that fn ploc))
     nil))
@@ -427,7 +439,7 @@ moving"
              '(1 2 333))))
 
 (defun edit (loc fn &rest args)
-  "Replaces the node at this loc with the result of (fn node args)"
+  "Replaces the node at this loc with the result of (apply fn node args)"
   (replace loc (apply fn (node loc) args)))
 
 (examples edit
@@ -437,8 +449,7 @@ moving"
              '(1 2 6))))
 
 (defun insert-child (loc item)
-  "Inserts `item` as the leftmost child of the node at this loc, without
-moving"
+  "Inserts item as the leftmost child of the node at this loc, without moving"
   (replace loc (make-node loc (node loc) (cons item (children loc)))))
 
 (examples insert-child
@@ -448,8 +459,7 @@ moving"
              '((0 1) 2 3))))
 
 (defun append-child (loc item)
-  "Inserts `item` as the rightmost child of the node at this loc, without
-moving"
+  "Inserts item as the rightmost child of the node at this loc, without moving"
   (replace loc (make-node loc (node loc) (append (children loc)
                                                    (list item)))))
 
@@ -461,7 +471,7 @@ moving"
 
 (defun remove (loc)
   "Removes the node at loc and moves to the previous loc in the hierarchy,
-depth first."
+  depth-first."
   (w/slots (nav) loc
     (if-not nav
       (error "Remove at top")
