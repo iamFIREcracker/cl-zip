@@ -68,4 +68,4 @@ jobs:
           asdf-version: ${{ needs.ci-config.outputs.asdf-version }}
           qlot-version: ${{ needs.ci-config.outputs.qlot-version }}
       - uses: actions/checkout@v2
-      - run: make tests-ros
+      - run: SBCL_BIN="ros run --" make test
