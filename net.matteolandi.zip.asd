@@ -1,10 +1,9 @@
 (pushnew (merge-pathnames (parse-namestring "vendor/ml/")
                           *default-pathname-defaults*)
          asdf:*central-registry*)
-(if (not (asdf:locate-system :3am))
-  (pushnew (merge-pathnames (parse-namestring "vendor/3am/")
-                            *default-pathname-defaults*)
-           asdf:*central-registry*))
+(pushnew (merge-pathnames (parse-namestring "vendor/3am/")
+                          *default-pathname-defaults*)
+         asdf:*central-registry*)
 
 
 (asdf:defsystem #:net.matteolandi.zip
