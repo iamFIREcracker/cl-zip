@@ -188,7 +188,7 @@ returns a new branch LOC with the supplied children.
   (node (all-the-way #'up loc)))
 
 (examples unzip
-  (is (equal (~> (zip '(((1)))) down down down (all-the-way #'up) node)
+  (is (equal (~>> (zip '(((1)))) down down down (all-the-way #'up) node)
              '(((1))))))
 
 
@@ -323,13 +323,13 @@ If no such LOC exists, returns nil."
 
 (examples next-that
   (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
-    (setf z (~> z (next-that [numberp (node _)])))
+    (setf z (~>> z (next-that [numberp (node _)])))
     (is (equal (node z) 1))
-    (setf z (~> z (next-that [numberp (node _)])))
+    (setf z (~>> z (next-that [numberp (node _)])))
     (is (equal (node z) 2))
-    (setf z (~> z (next-that [numberp (node _)])))
+    (setf z (~>> z (next-that [numberp (node _)])))
     (is (equal (node z) 3))
-    (setf z (~> z (next-that [numberp (node _)])))
+    (setf z (~>> z (next-that [numberp (node _)])))
     (is (equal (node z) 4))
     ))
 
@@ -346,7 +346,7 @@ If no such LOC exists, returns nil."
     (up loc)))
 
 (examples prev
-  (bnd1 z (~> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next))
+  (bnd1 z (~>> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next))
     (is (equal (node z) 4))
     (is (equal (~> z prev node)
                3))
@@ -378,13 +378,13 @@ If no such LOC exists, returns nil."
     nil))
 
 (examples prev-that
-  (bnd1 z (~> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next))
+  (bnd1 z (~>> (zip '(* (+ 1 2) (- 3 4))) (all-the-way #'next))
     (is (equal (node z) 4))
-    (setf z (~> z (prev-that [numberp (node _)])))
+    (setf z (~>> z (prev-that [numberp (node _)])))
     (is (equal (node z) 3))
-    (setf z (~> z (prev-that [numberp (node _)])))
+    (setf z (~>> z (prev-that [numberp (node _)])))
     (is (equal (node z) 2))
-    (setf z (~> z (prev-that [numberp (node _)])))
+    (setf z (~>> z (prev-that [numberp (node _)])))
     (is (equal (node z) 1))
     ))
 
@@ -404,9 +404,9 @@ moving"
                   (meta loc))))))
 
 (examples insert-left
-  (is (equal (~> (zip '(1 2 3)) down (insert-left ~ 0) node)
+  (is (equal (~> (zip '(1 2 3)) down (insert-left 0) node)
              1))
-  (is (equal (~> (zip '(1 2 3)) down (insert-left ~ 0) unzip)
+  (is (equal (~> (zip '(1 2 3)) down (insert-left 0) unzip)
              '(0 1 2 3))))
 
 (defun insert-right (loc item)
@@ -423,9 +423,9 @@ moving"
                   (meta loc))))))
 
 (examples insert-right
-  (is (equal (~> (zip '(1 2 3)) down rightmost (insert-right ~ 4) node)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (insert-right 4) node)
              3))
-  (is (equal (~> (zip '(1 2 3)) down rightmost (insert-right ~ 4) unzip)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (insert-right 4) unzip)
              '(1 2 3 4))))
 
 (defun replace (loc item)
@@ -433,9 +433,9 @@ moving"
   (make-loc item (update-nav (nav loc) :changed? t) (meta loc)))
 
 (examples replace
-  (is (equal (~> (zip '(1 2 3)) down rightmost (replace ~ 333) node)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (replace 333) node)
              333))
-  (is (equal (~> (zip '(1 2 3)) down rightmost (replace ~ 333) unzip)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (replace 333) unzip)
              '(1 2 333))))
 
 (defun edit (loc fn &rest args)
@@ -443,9 +443,9 @@ moving"
   (replace loc (apply fn (node loc) args)))
 
 (examples edit
-  (is (equal (~> (zip '(1 2 3)) down rightmost (edit ~ [* _ 2]) node)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (edit [* _ 2]) node)
              6))
-  (is (equal (~> (zip '(1 2 3)) down rightmost (edit ~ [* _ 2]) unzip)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (edit [* _ 2]) unzip)
              '(1 2 6))))
 
 (defun insert-child (loc item)
@@ -453,9 +453,9 @@ moving"
   (replace loc (make-node loc (node loc) (cons item (children loc)))))
 
 (examples insert-child
-  (is (equal (~> (zip '(1 2 3)) down (edit ~ [list _]) (insert-child ~ 0) node)
+  (is (equal (~> (zip '(1 2 3)) down (edit [list _]) (insert-child 0) node)
              '(0 1)))
-  (is (equal (~> (zip '(1 2 3)) down (edit ~ [list _]) (insert-child ~ 0) unzip)
+  (is (equal (~> (zip '(1 2 3)) down (edit [list _]) (insert-child 0) unzip)
              '((0 1) 2 3))))
 
 (defun append-child (loc item)
@@ -464,9 +464,9 @@ moving"
                                                    (list item)))))
 
 (examples append-child
-  (is (equal (~> (zip '(1 2 3)) down rightmost (edit ~ [list _]) (append-child ~ 4) node)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (edit [list _]) (append-child 4) node)
              '(3 4)))
-  (is (equal (~> (zip '(1 2 3)) down rightmost (edit ~ [list _]) (append-child ~ 4) unzip)
+  (is (equal (~> (zip '(1 2 3)) down rightmost (edit [list _]) (append-child 4) unzip)
              '(1 2 (3 4)))))
 
 (defun remove (loc)
@@ -491,13 +491,13 @@ moving"
 
 (examples remove
   (bnd1 z (zip '(* (+ 1 2) (- 3 4)))
-    (is (equal (~> z (next-that [equal (node _) 1]) remove node)
+    (is (equal (~>> z (next-that [equal (node _) 1]) remove node)
                '+))
-    (is (equal (~> z (next-that [equal (node _) 1]) remove unzip)
+    (is (equal (~>> z (next-that [equal (node _) 1]) remove unzip)
                '(* (+ 2) (- 3 4))))
 
-    (is (equal (~> z (next-that [equal (node _) '+]) up remove node)
+    (is (equal (~>> z (next-that [equal (node _) '+]) up remove node)
                '*))
-    (is (equal (~> z (next-that [equal (node _) '+]) up remove unzip)
+    (is (equal (~>> z (next-that [equal (node _) '+]) up remove unzip)
                '(* (- 3 4))))
     ))

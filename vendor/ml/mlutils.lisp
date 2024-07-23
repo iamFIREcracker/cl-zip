@@ -2,7 +2,7 @@
 ;;;; See http://quickutil.org for details.
 
 ;;;; To regenerate:
-;;;; (qtlc:save-utils-as "mlutils.lisp" :utilities '(:@ :ALIST-KEYS :ALIST-VALUES :APPENDF :ASSOC-VALUE :BND* :BND1 :D-B :DOLISTS :DORANGE :DORANGEI :DOSEQ :DOSEQ :FLET* :FN :IF-LET :IF-NOT :IOTA :KEEP-IF :KEEP-IF-NOT :LAST-ELT :LOOPING :M-V-B :MKLIST :ONCE-ONLY :PLIST-KEYS :PLIST-VALUES :PMX1 :RANGE :RECURSIVELY :SPLIT-SEQUENCE :SYMB :UNTIL :W/GENSYMS :W/SLOTS :WHEN-LET :WHILE :WITH-GENSYMS :~>) :categories '(:ANAPHORIC :PRINTING) :ensure-package T :package "MLUTILS")
+;;;; (qtlc:save-utils-as "mlutils.lisp" :utilities '(:@ :ALIST-KEYS :ALIST-VALUES :APPENDF :ASSOC-VALUE :BND* :BND1 :D-B :DBG :DBGL :DOLISTS :DORANGE :DORANGEI :DOSEQ :DOSEQ :FLET* :FN :IF-LET :IF-NOT :IOTA :KEEP-IF :KEEP-IF-NOT :LAST-ELT :LET1 :LOOPING :M-V-B :MKLIST :ONCE-ONLY :PLIST-KEYS :PLIST-VALUES :PMX :RANGE :RECURSIVELY :SPLIT-SEQUENCE :STRING-ENDS-WITH-P :STRING-STARTS-WITH-P :SUBDIVIDE :SYMB :UNDEFUN :UNDEFMACRO :UNDEFVAR :UNDEFPARAMETER :UNDEFCONSTANT :UNDEFPACKAGE :UNDEFCLASS :UNDEFMETHOD :UNTIL :W/GENSYMS :W/SLOTS :WHEN-LET :WHILE :WITH-GENSYMS :~> :~>>) :categories '(:ANAPHORIC :PRINTING) :ensure-package T :package "MLUTILS")
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (find-package "MLUTILS")
@@ -23,13 +23,18 @@
                                          :EMPTYP :SAFE-ENDP :CIRCULAR-LIST
                                          :PROPER-LIST-LENGTH/LAST-CAR
                                          :PROPER-LIST-P :PROPER-LIST
-                                         :PROPER-SEQUENCE :LAST-ELT :LOOPING
-                                         :M-V-B :MKLIST :PLIST-KEYS
-                                         :PLIST-VALUES :PMX1 :RANGE
-                                         :RECURSIVELY :SPLIT-SEQUENCE :MKSTR
-                                         :SYMB :UNTIL :W/GENSYMS :W/SLOTS
-                                         :WHEN-LET :WHILE :~> :LET1 :AIF :AAND
-                                         :AWHEN :SPRS :SPRN :SPR :PRS :PRN :PR))))
+                                         :PROPER-SEQUENCE :LAST-ELT :LET1 :AIF
+                                         :LOOPING :M-V-B :MKLIST :PLIST-KEYS
+                                         :PLIST-VALUES :PMX :RANGE :RECURSIVELY
+                                         :SPLIT-SEQUENCE :STRING-ENDS-WITH-P
+                                         :STRING-STARTS-WITH-P :SUBDIVIDE
+                                         :MKSTR :SYMB :UNDEFUN :UNDEFMACRO
+                                         :UNDEFVAR :UNDEFPARAMETER
+                                         :UNDEFCONSTANT :UNDEFPACKAGE
+                                         :UNDEFCLASS :UNDEFMETHOD :UNTIL
+                                         :W/GENSYMS :W/SLOTS :WHEN-LET :WHILE
+                                         :~> :~>> :AAND :AWHEN :SPRS :SPRN :SPR
+                                         :PRS :PRN :PR :DBGL :DBG))))
 
   (defmacro @ (x &rest places)
     ;;"XXX"
@@ -135,11 +140,11 @@ unique symbol the named variable will be bound to."
       ((define-alist-get (name get-entry get-value-from-entry add doc)
          `(progn
             (declaim (inline ,name))
-            (defun ,name (alist key &key (test 'eql))
+            (defun ,name (alist key &key (test 'equal))
               ,doc
               (let ((entry (,get-entry key alist :test test)))
                 (values (,get-value-from-entry entry) entry)))
-            (define-setf-expander ,name (place key &key (test ''eql)
+            (define-setf-expander ,name (place key &key (test ''equal)
                                                    &environment env)
               (multiple-value-bind
                     (temporary-variables initforms newvals setter getter)
@@ -599,6 +604,100 @@ sequence, is an empty sequence, or if OBJECT cannot be stored in SEQUENCE."
                     :expected-type '(and proper-sequence (not (satisfies emptyp))))))))
   
 
+  (defmacro let1 (var val &body body)
+    "Bind VAR to VAL within BODY. Equivalent to LET with one binding."
+    `(let ((,var ,val))
+       ,@body))
+  
+
+  (defmacro aif (test then &optional else)
+    "Like IF, except binds the result of `test` to IT (via LET) for the scope of `then` and `else` expressions."
+    (aif-expand test then else))
+
+  (eval-when (:compile-toplevel :load-toplevel :execute)
+    (defun aif-expand (test then &optional else)
+      (let1 it (intern "IT")
+        `(let1 ,it ,test
+           (if ,it ,then ,else)))))
+  
+
+  (defparameter *looping-reduce-keywords*  '(collect! append! adjoin! sum! multiply! count! minimize! maximize!))
+
+  (defun %extract-reduce-keywords (body)
+    "Walk `body` and collect any symbol that matches any of the keywords inside
+*LOOPING-REDUCE-KEYWORDS*"
+    (cond ((null body) nil)
+          ((symbolp body) (aif (find body *looping-reduce-keywords* :test #'string=)
+                            (list it)))
+          ((consp body) (unless (and (symbolp (car body))
+                                     (string= (car body) 'looping))
+                          (append (%extract-reduce-keywords (car body))
+                                  (%extract-reduce-keywords (cdr body)))))))
+
+  (defun %assert-compatible-reduce-keywords (keywords)
+    "Assert LOOPING reduce functions `keywords` are compatible with one another
+E.g. COLLECT! is compatible with APPEND!, or ADJOIN!, but not with SUM!"
+    (flet ((incompatible-keyword! (k rest)
+             (ecase k
+               ((collect! append! adjoin!) (aif (find-if (lambda (k1) (and (not (eql k1 'collect!))
+                                                                           (not (eql k1 'append!))
+                                                                           (not (eql k1 'adjoin!))))
+                                                         rest)
+                                             (error "Cannot use ~A together with ~A" it k)))
+               (sum! (aif (find 'sum! rest :test-not 'eq)
+                       (error "Cannot use ~A together with ~A" it k)))
+               (multiply! (aif (find 'multiply! rest :test-not 'eq)
+                            (error "Cannot use ~A together with ~A" it k)))
+               (count! (aif (find 'count! rest :test-not 'eq)
+                         (error "Cannot use ~A together with ~A" it k)))
+               (minimize! (aif (find 'minimize! rest :test-not 'eq)
+                            (error "Cannot use ~A together with ~A" it k)))
+               (maximize! (aif (find 'minimize! rest :test-not 'eq)
+                            (error "Cannot use ~A together with ~A" it k))))))
+      (loop for (k . rest) on keywords do (incompatible-keyword! k rest))))
+
+  (defun %initialize-result (keywords)
+    "Initialize the LOOPING return value
+ E.g. when COLLECT!-ing, the initial value will be NIL; when SUM!-ing, the
+ initial value will be 0"
+    (ecase (car keywords)
+      ((collect! append! adjoin! minimize! maximize!) nil)
+      ((sum! count!) 0)
+      ((multiply!) 1)))
+
+  (defgeneric %expand-keyword-into-label (k result last)
+    (:method ((k (eql 'collect!)) result last)
+      `(,(intern "COLLECT!") (item)
+         (if (not ,last)
+           (prog1 (push item ,result)
+             (setf ,last ,result))
+           (prog1 (push item (cdr ,last))
+             (setf ,last (cdr ,last))))))
+    (:method ((k (eql 'append!)) result last)
+      `(,(intern "APPEND!") (item)
+         (setf ,result (append ,result item)
+               ,last (last item))
+         item))
+    (:method ((k (eql 'adjoin!)) result last)
+      `(,(intern "ADJOIN!") (item &rest adjoin-args)
+         (setf ,result (apply #'adjoin item ,result adjoin-args))))
+    (:method ((k (eql 'sum!)) result last)
+      `(,(intern "SUM!") (item)
+         (incf ,result item)))
+    (:method ((k (eql 'multiply!)) result last)
+      `(,(intern "MULTIPLY!") (item)
+         (setf ,result (* ,result item))))
+    (:method ((k (eql 'count!)) result last)
+      `(,(intern "COUNT!") (item)
+         (when item
+           (incf ,result))))
+    (:method ((k (eql 'minimize!)) result last)
+      `(,(intern "MINIMIZE!") (item)
+         (setf ,result (min (or ,result item) item))))
+    (:method ((k (eql 'maximize!)) result last)
+      `(,(intern "MAXIMIZE!") (item)
+         (setf ,result (max (or ,result item) item)))))
+
   (defmacro looping (&body body)
     "Run `body` in an environment where the symbols COLLECT!, APPEND!, ADJOIN!,
 SUM!, MULTIPLY!, COUNT!, MINIMIZE!, and MAXIMIZE! are bound to functions that
@@ -636,83 +735,14 @@ Examples:
       (count! (oddp i))))
   ;; Signals an ERROR: Cannot use COUNT! together with SUM!
   "
-    (with-gensyms (loop-type result last collect-last)
-      (labels ((extract-loop-type (body)
-                 (cond ((null body) nil)
-                       ((symbolp body) (find body
-                                             '(collect! append! adjoin! sum! multiply! count! minimize! maximize!)
-                                             :test #'string=))
-                       ((consp body) (unless (and (symbolp (car body))
-                                                  (string= (car body) 'looping))
-                                       (or (extract-loop-type (car body))
-                                           (extract-loop-type (cdr body)))))))
-               (init-result (loop-type)
-                 (ecase loop-type
-                   ((collect! append! adjoin! minimize! maximize!) nil)
-                   ((sum! count!) 0)
-                   ((multiply!) 1))))
-        (let* ((loop-type-value (extract-loop-type body))
-               (result-value (init-result loop-type-value)))
-          `(let* ((,loop-type ',loop-type-value)
-                  (,result ,result-value)
+    (let1 keywords (remove-duplicates (%extract-reduce-keywords body))
+      (%assert-compatible-reduce-keywords keywords)
+      (with-gensyms (result last expand-fn)
+        (let1 labels (mapcar (lambda (k) (%expand-keyword-into-label k result last)) keywords)
+          `(let* ((,result ,(%initialize-result keywords))
                   (,last nil))
-             ;; TODO: rather than defining all these functions only to get
-             ;; a few of them (one?!) used, why not just define the function
-             ;; that the body is going to use?  will that speed up the
-             ;; compilation process a little bit?
              (declare (ignorable ,last))
-             (labels ((,collect-last (item)
-                       (if (not ,last)
-                         (prog1 (push item ,result)
-                           (setf ,last ,result))
-                         (prog1 (push item (cdr ,last))
-                           (setf ,last (cdr ,last)))))
-                      (,(intern "COLLECT!") (item)
-                       (if (and ,loop-type (and (not (eql ,loop-type 'collect!))
-                                                (not (eql ,loop-type 'append!))
-                                                (not (eql ,loop-type 'adjoin!)) ))
-                         (error "Cannot use COLLECT! together with ~A" ,loop-type)
-                         (,collect-last item)))
-                      (,(intern "APPEND!") (item)
-                       (if (and ,loop-type (and (not (eql ,loop-type 'collect!))
-                                                (not (eql ,loop-type 'append!))
-                                                (not (eql ,loop-type 'adjoin!)) ))
-                         (error "Cannot use APPEND! together with ~A" ,loop-type)
-                         (progn
-                           (setf ,result (append ,result item)
-                                 ,last (last item))
-                           item)))
-                      (,(intern "ADJOIN!") (item &rest adjoin-args)
-                       (if (and ,loop-type (and (not (eql ,loop-type 'collect!))
-                                                (not (eql ,loop-type 'append!))
-                                                (not (eql ,loop-type 'adjoin!))))
-                         (error "Cannot use ADJOIN! together with ~A" ,loop-type)
-                         (setf ,result (apply #'adjoin item ,result adjoin-args))))
-                      (,(intern "SUM!") (item)
-                       (if (and ,loop-type (not (eql ,loop-type 'sum!)))
-                         (error "Cannot use SUM! together with ~A" ,loop-type)
-                         (progn
-                           (incf ,result item)
-                           item)))
-                      (,(intern "MULTIPLY!") (item)
-                       (if (and ,loop-type (not (eql ,loop-type 'multiply!)))
-                         (error "Cannot use MULTIPLY! together with ~A" ,loop-type)
-                         (setf ,result (* ,result item))))
-                      (,(intern "COUNT!") (item)
-                       (if (and ,loop-type (not (eql ,loop-type 'count!)))
-                         (error "Cannot use COUNT! together with ~A" ,loop-type)
-                         (progn
-                           (when item
-                             (incf ,result)
-                             item))))
-                      (,(intern "MINIMIZE!") (item)
-                       (if (and ,loop-type (not (eql ,loop-type 'minimize!)))
-                         (error "Cannot use MINIMIZE1 together with ~A" ,loop-type)
-                         (setf ,result (min (or ,result item) item))))
-                      (,(intern "MAXIMIZE!") (item)
-                       (if (and ,loop-type (not (eql ,loop-type 'maximize!)))
-                         (error "Cannot use MAXIMIZE! together with ~A" ,loop-type)
-                         (setf ,result (max (or ,result item) item)))))
+             (labels (,@labels)
                ,@body)
              ,result)))))
   
@@ -882,6 +912,40 @@ stopped."
                             sequence start end count remove-empty-subseqs))))
   
 
+  (defun string-ends-with-p (suffix s)
+    "Returns T if the last few characters of `s` are equal to `suffix`."
+    (and (<= (length suffix) (length s))
+         (string= suffix s :start2 (- (length s) (length suffix)))))
+  
+
+  (defun string-starts-with-p (prefix s)
+    "Returns T if the first few characters of `s` are equal to `prefix`."
+    (and (<= (length prefix) (length s))
+         (string= prefix s :end2 (length prefix))))
+  
+
+  (defun subdivide (sequence chunk-size)
+    "Split `sequence` into subsequences of size `chunk-size`."
+    (check-type sequence sequence)
+    (check-type chunk-size (integer 1))
+    
+    (etypecase sequence
+      ;; Since lists have O(N) access time, we iterate through manually,
+      ;; collecting each chunk as we pass through it. Using SUBSEQ would
+      ;; be O(N^2).
+      (list (loop :while sequence
+                  :collect
+                  (loop :repeat chunk-size
+                        :while sequence
+                        :collect (pop sequence))))
+      
+      ;; For other sequences like strings or arrays, we can simply chunk
+      ;; by repeated SUBSEQs.
+      (sequence (loop :with len := (length sequence)
+                      :for i :below len :by chunk-size
+                      :collect (subseq sequence i (min len (+ chunk-size i)))))))
+  
+
   (defun mkstr (&rest args)
     "Receives any number of objects (string, symbol, keyword, char, number), extracts all printed representations, and concatenates them all into one string.
 
@@ -897,6 +961,107 @@ Extracted from _On Lisp_, chapter 4.
 
 See also: `symbolicate`"
     (values (intern (apply #'mkstr args))))
+  
+
+  (defmacro undefun (name lambda-list &body body)
+    "Removes the function or macro definition, if any, of `name` in the global
+environment.
+
+Similar to FMAKUNBOUND, except it has the same signature of DEFUN; this makes
+it particularly easy to undefine a function or a macro by simply changing DEFUN
+into UNDEFUN and DEFMACRO into UNDEFMACRO"
+    (declare (ignore lamda-list body))
+    `(fmakunbound ,name))
+  
+
+  (defmacro undefmacro (name lambda-list &body body)
+    "Removes the function or macro definition, if any, of `name` in the global
+environment.
+
+Similar to FMAKUNBOUND, except it has the same signature of DEFUN; this makes
+it particularly easy to undefine a function or a macro by simply changing DEFUN
+into UNDEFUN and DEFMACRO into UNDEFMACRO"
+    (declare (ignore lamda-list body))
+    `(fmakunbound ,name))
+  
+
+  (defmacro undefvar (var &optional (val nil) (doc nil))
+    "Makes the symbol be unbound, regardless of whether it was previously bound.
+
+Similar to MAKUNBOUND, except it has the same signature of DEFVAR; this makes
+it particularly easy to make a symbol unbound by simply changing DEFVAR into
+UNDEFVAR"
+    (declare (ignore val doc))
+    `(makunbound ,var))
+  
+
+  (defmacro undefparameter (var val &optional (doc nil))
+    "Makes the symbol be unbound, regardless of whether it was previously bound.
+
+Similar to MAKUNBOUND, except it has the same signature of DEFPARAMETER; this
+makes it particularly easy to make a symbol unbound by simply changing
+DEFPARAMETER into UNDEFVAR"
+    (declare (ignore val doc))
+    `(makunbound ,var))
+  
+
+  (defmacro undefconstant (name value &optional (doc nil))
+    "Makes the symbol be unbound, regardless of whether it was previously bound.
+
+Similar to MAKUNBOUND, except it has the same signature of DEFCONSTANT; this
+makes it particularly easy to make a symbol unbound by simply changing
+DEFCONSTANT into UNDEFVAR"
+    (declare (ignore val doc))
+    `(makunbound ,var))
+  
+
+  (defmacro undefpackage (name &rest options)
+    "Deletes `package` from all system data structures.
+
+Similar to DELETE-PACKAGE, except it has the same signature of DEFPACKAGE; this
+makes it particularly easy to delete a package by simply changing DEFPACKAGE
+into UNDEFPACKAGE"
+    (declare (ignore options))
+    `(delete-package ,name))
+  
+
+  (defmacro undefclass (class direct-superclasses direct-slots &rest options)
+    "Removes the association between `class` and its class object.
+
+A mere wrapper around (setf (find-class class) nil), except it has the same
+signature of DEFCLASS; this makes it particularly easy to undefine a class by
+simply changing DEFCLASS into UNDEFCLASS"
+    (declare (ignore direct-superclasses direct-slots options))
+    `(setf (find-class ,class) nil))
+  
+
+  ;; https://groups.google.com/g/comp.lang.lisp/c/W6OrfjLhPJ8/m/txPfD-pPqPMJ
+  (defmacro undefmethod (name &rest args)
+    "Removes a method from a generic-function `name`.
+
+This macro's signature matches DEFMETHOD's one, and `args` will be used to
+extract the method qualifiers and specializers necessary to find the right
+method to remove; this makes it particularly easy to undefine a method by
+simply changing DEFMETHOD into UNDEFMETHOD"
+    (flet ((parse-undefmethod-args (args)
+             (let (p q method-qualifiers specializers)
+               (loop (cond ((atom (setq p (car args))) (push p method-qualifiers))
+                           (t (return))) ; now P is the specialized-lambda-list
+                     (setq args (cdr args)))
+               (loop (when (null p) (return))
+                     (cond ((symbolp (setq q (car p)))
+                            (case q
+                              ((&aux &key &optional &rest &allow-other-keys) (return))
+                              (t (push T specializers)))) ; handle eql specializers:
+                           ((consp (cadr q)) (push (cadr q) specializers))
+                           (t (push (find-class (cadr q)) specializers)))
+                     (setq p (cdr p)))
+               (values (nreverse method-qualifiers) (nreverse specializers)))))
+      `(let ((fdefn (fdefinition ',name)))
+         (multiple-value-bind (qualifiers specializers)
+             (parse-undefmethod-args ',args)
+           (let ((meth (find-method fdefn qualifiers specializers)))
+             (when meth (remove-method fdefn meth)))))))
   
 
   (defmacro until (expression &body body)
@@ -979,30 +1144,82 @@ PROGN."
   (defmacro ~> (x &rest forms)
     "Threads the expr through the forms, like Clojure's `->`.
 
-  While threading, for each element of `forms`:
+While threading, for each element of `forms`:
 
-  - if a SYMBOL, it's converted into a LIST and the accumulated value is
-    appended to it
-  - if a LIST already, the accumulated value is appended to it unless the list
-    contains the placeholder '~ (in which case '~ is replaced with the
-    accumulated value)
+- if a SYMBOL, it's converted into a function call with the accumulated value
+as it's first argument
+- if a function call already, the accumulated value is **prepended** to the
+list of args unless it contains the placeholder '~ (in which case '~ is
+replaced with the accumulated value)
 
-  Examples:
-  (-> 'World
-    (list 'Hello))
-  =>
-  (HELLO WORLD)
+Examples:
 
-  (-> 'World
-    (list ~ 'Hello))
-  =>
-  (WORLD HELLO)
+(~> 'Hello
+  (list 'World))
+=>
+(HELLO WORLD)
 
-  (-> 'World
-    (list ~ 'Hello)
-    reverse)
-  =>
-  (HELLO WORLD)
+(~> 'Hello
+  (list 'World ~))
+=>
+(WORLD HELLO)
+
+(~> 'Hello
+  (list 'World ~)
+  reverse)
+=>
+(HELLO WORLD)
+  "
+    (labels ((replace-or-prepend (old form new)
+               (if (contains? old form)
+                 (subst new old form)
+                 (list* (car form) new (cdr form))))
+             (contains? (target form)
+               (recursively ((form form))
+                 (if (atom form)
+                   (eq form target)
+                   (or (recur (car form))
+                       (recur (cdr form)))))))
+      (let ((placeholder (intern "~")))
+        (with-gensyms (result)
+          `(let* ((,result ,x)
+                  ,@(mapcar (lambda (form)
+                              (if (atom form)
+                                `(,result (,form ,result))
+                                `(,result ,(replace-or-prepend placeholder
+                                                               form
+                                                               result))))
+                            forms))
+             ,result)))))
+  
+
+  (defmacro ~>> (x &rest forms)
+    "Threads the expr through the forms, like Clojure's `->>`.
+
+While threading, for each element of `forms`:
+
+- if a SYMBOL, it's converted into a function call with the accumulated value
+as it's first argument
+- if a function call already, the accumulated value is **appended** to the
+list of args unless it contains the placeholder '~ (in which case '~ is
+replaced with the accumulated value)
+
+Examples:
+(~>> 'World
+  (list 'Hello))
+=>
+(HELLO WORLD)
+
+(~>> 'World
+  (list ~ 'Hello))
+=>
+(HELLO WORLD)
+
+(~>> 'World
+  (list ~ 'Hello)
+  reverse)
+=>
+(HELLO WORLD)
   "
     (labels ((replace-or-append (old form new)
                (if (contains? old form)
@@ -1025,23 +1242,6 @@ PROGN."
                                                               result))))
                             forms))
              ,result)))))
-  
-
-  (defmacro let1 (var val &body body)
-    "Bind VAR to VAL within BODY. Equivalent to LET with one binding."
-    `(let ((,var ,val))
-       ,@body))
-  
-
-  (defmacro aif (test then &optional else)
-    "Like IF, except binds the result of `test` to IT (via LET) for the scope of `then` and `else` expressions."
-    (aif-expand test then else))
-
-  (eval-when (:compile-toplevel :load-toplevel :execute)
-    (defun aif-expand (test then &optional else)
-      (let1 it (intern "IT")
-        `(let1 ,it ,test
-           (if ,it ,then ,else)))))
   
 
   (defmacro aand (&rest forms)
@@ -1070,47 +1270,68 @@ PROGN."
   
 
   (defun sprs (&rest args)
-    "Print all its `args` into a string, separated by a space, and return it."
+    "Print `args` into a string, separated by a space, and return it."
     (format nil "~{~A~^ ~}" args))
   
 
   (defun sprn (&rest args)
-    "Prints all its `args` into a string, separated by a newline, and return it."
+    "Print `args` into a string, separated by a newline, and return it."
     (format nil "~{~A~^~%~}" args))
   
 
   (defun spr (&rest args)
-    "Prints all its `args` into a string, and return it."
+    "Print `args` into a string, and return it."
     (format nil "~{~A~}" args))
   
 
   (defun prs (&rest args)
-    "Print all its `args` to screen, separated by a space. Returns the first arg."
+    "Print `args` to screen, separated by a space. Returns the first arg."
     (format t "~{~A~^ ~}" args)
     (finish-output)
     (first args))
   
 
   (defun prn (&rest args)
-    "Prints all its `args` to screen, separated by a newline. Returns the first arg."
+    "Print `args` to screen, separated by a newline. Returns the first arg."
     (format t "~{~A~^~%~}" args)
     (finish-output)
     (first args))
   
 
   (defun pr (&rest args)
-    "Prints all its `args` to screen. Returns the first arg."
+    "Print `args` to screen. Returns the first arg."
     (format t "~{~A~}" args)
+    (finish-output)
+    (first args))
+  
+
+  (defmacro dbgl (&rest args)
+    "Print `args`, labeled, separated by a newline, and followed by a final
+newline.  Returns the last arg. labeled and readably."
+    `(prog1
+       (progn ,@(mapcar (lambda (arg) `(prs ',arg ,arg)) args))
+       (terpri)
+       (finish-output)))
+  
+
+  (defun dbg (&rest args)
+    "Print `args` to screen, separated by a space, and followed by a newline.
+Returns the first arg."
+    (format t "~{~A~^ ~}" args)
+    (terpri)
     (finish-output)
     (first args))
   
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (export '(@ alist-keys alist-values appendf assoc-value rassoc-value bnd*
             bnd1 d-b dolists dorange dorangei doseq flet* fn if-let if-not iota
-            keep-if keep-if-not last-elt looping m-v-b mklist once-only
-            plist-keys plist-values pmx1 range recursively split-sequence
-            split-sequence-if split-sequence-if-not symb until w/gensyms
-            w/slots when-let when-let* while with-gensyms with-unique-names ~>
-            aand awhen aif sprs sprn spr prs prn pr)))
+            keep-if keep-if-not last-elt let1 looping m-v-b mklist once-only
+            plist-keys plist-values pmx range recursively split-sequence
+            split-sequence-if split-sequence-if-not string-ends-with-p
+            string-starts-with-p subdivide symb undefun undefmacro undefvar
+            undefparameter undefconstant undefpackage undefclass undefmethod
+            until w/gensyms w/slots when-let when-let* while with-gensyms
+            with-unique-names ~> ~>> aand awhen aif sprs sprn spr prs prn pr
+            dbgl dbg)))
 
 ;;;; END OF mlutils.lisp ;;;;

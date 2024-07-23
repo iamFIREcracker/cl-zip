@@ -11,7 +11,7 @@
 
 
 (defun parse-snailfish (string)
-  (~> string
+  (~>> string
     (substitute #\Space #\,)
     (substitute #\( #\[)
     (substitute #\) #\])
