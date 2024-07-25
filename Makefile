@@ -2,6 +2,21 @@ SBCL_BIN ?= sbclw
 SBCL_ARGS ?= --noinform
 
 
+.PHONY: doc
+doc:
+	${SBCL_BIN} ${SBCL_ARGS} \
+		--eval "(pushnew '*default-pathname-defaults* asdf:*central-registry*)" \
+		--eval "(handler-case (ql:quickload :net.matteolandi.zip/doc) \
+			  (error (a) \
+			    (format t \"caught error ~s~%~a~%\" a a) \
+			    (uiop:quit 17)))" \
+		--eval "(handler-case (time (asdf:make :net.matteolandi.zip/doc)) \
+			  (error (a) \
+			    (format T \"caught error ~s~%~a~%\" a a) \
+			    (uiop:quit 13)))" \
+		--eval "(uiop:quit 0)"
+
+
 .PHONY: test
 test:
 	${SBCL_BIN} ${SBCL_ARGS} \
